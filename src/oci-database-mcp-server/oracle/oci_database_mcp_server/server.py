@@ -305,11 +305,13 @@ def get_database_client(region: str = None):
     )
     user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
     config["additional_user_agent"] = f"{user_agent_name}/{__version__}"
-    private_key = oci.signer.load_private_key_from_file(config["key_file"])
-    token_file = config["security_token_file"]
-    with open(token_file, "r") as f:
-        token = f.read()
-    signer = oci.auth.signers.SecurityTokenSigner(token, private_key)
+    signer = None
+    if "security_token_file" in config:
+        private_key = oci.signer.load_private_key_from_file(config["key_file"])
+        token_file = config["security_token_file"]
+        with open(token_file, "r") as f:
+            token = f.read()
+        signer = oci.auth.signers.SecurityTokenSigner(token, private_key)
     if region is None:
         return oci.database.DatabaseClient(config, **_get_oci_client_kwargs(signer))
     regional_config = config.copy()
@@ -379,13 +381,18 @@ def get_public_ip_for_database(
         config = oci.config.from_file(
             profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
         )
-        private_key = oci.signer.load_private_key_from_file(config["key_file"])
-        token_file = config["security_token_file"]
-        with open(token_file, "r") as f:
-            token = f.read()
-        signer = oci.auth.signers.SecurityTokenSigner(token, private_key)
+        vn_signer = None
+        if "security_token_file" in config:
+            private_key = oci.signer.load_private_key_from_file(config["key_file"])
+            token_file = config["security_token_file"]
+            with open(token_file, "r") as f:
+                token = f.read()
+            vn_signer = oci.auth.signers.SecurityTokenSigner(token, private_key)
 
-        virtual_network_client = oci.core.VirtualNetworkClient(config, signer=signer)
+        vn_client_kwargs = {}
+        if vn_signer is not None:
+            vn_client_kwargs["signer"] = vn_signer
+        virtual_network_client = oci.core.VirtualNetworkClient(config, **vn_client_kwargs)
         if region:
             virtual_network_client.base_client.set_region(region)
 
