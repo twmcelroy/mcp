@@ -825,3 +825,41 @@ class TestGetClient:
         assert isinstance(config["additional_user_agent"], str) and "/" in config["additional_user_agent"]
         # Returned object is client instance
         assert srv_client is mock_client.return_value
+
+    @patch("oracle.oci_identity_mcp_server.server.oci.identity.IdentityClient")
+    @patch("oracle.oci_identity_mcp_server.server.oci.auth.signers.SecurityTokenSigner")
+    @patch("oracle.oci_identity_mcp_server.server.oci.signer.load_private_key_from_file")
+    @patch("oracle.oci_identity_mcp_server.server.open", new_callable=mock_open)
+    @patch("oracle.oci_identity_mcp_server.server.oci.config.from_file")
+    @patch("oracle.oci_identity_mcp_server.server.os.getenv")
+    def test_get_identity_client_supports_api_key_config(
+        self,
+        mock_getenv,
+        mock_from_file,
+        mock_open_file,
+        mock_load_private_key,
+        mock_security_token_signer,
+        mock_client,
+    ):
+        # Arrange: config has no security_token_file, e.g. a standard API key profile
+        mock_getenv.side_effect = lambda k, default=None: default
+        config = {
+            "key_file": "/abs/path/to/key.pem",
+            "fingerprint": "fingerprint",
+            "tenancy": "ocid1.tenancy.oc1..sample",
+            "user": "ocid1.user.oc1..sample",
+            "region": "us-ashburn-1",
+        }
+        mock_from_file.return_value = config
+
+        # Act
+        result = server.get_identity_client()
+
+        # Assert: no attempt to load a security token, client built without a signer
+        mock_open_file.assert_not_called()
+        mock_load_private_key.assert_not_called()
+        mock_security_token_signer.assert_not_called()
+        args, kwargs = mock_client.call_args
+        assert args[0] is config
+        assert "signer" not in kwargs
+        assert result is mock_client.return_value

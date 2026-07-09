@@ -50,6 +50,8 @@ The server supports the following environment variables:
 
 ⚠️ **NOTE**: `stdio` uses the configured OCI CLI profile. HTTP uses the authenticated OCI IAM user and does not use the local OCI CLI profile for request authentication.
 
+For `stdio`, the configured profile may use either a session token (`security_token_file` set, e.g. via `oci session authenticate`) or a standard API key (`key_file`, `fingerprint`, `tenancy`, `user`, `region`, with no `security_token_file`). The server detects which is configured and authenticates accordingly.
+
 ## Third-Party APIs
 
 Developers choosing to distribute a binary implementation of this project are responsible for obtaining and providing all required licenses and copyright notices for the third-party code used in order to ensure compliance with their respective open source licenses.
