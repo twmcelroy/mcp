@@ -48,6 +48,47 @@ class TestGetDatabaseClient:
         assert callable(kwargs["circuit_breaker_callback"])
         assert result is mock_client.return_value
 
+    @patch("oracle.oci_database_mcp_server.server.oci.database.DatabaseClient")
+    @patch("oracle.oci_database_mcp_server.server.oci.auth.signers.SecurityTokenSigner")
+    @patch("oracle.oci_database_mcp_server.server.oci.signer.load_private_key_from_file")
+    @patch("oracle.oci_database_mcp_server.server.open", new_callable=mock_open)
+    @patch("oracle.oci_database_mcp_server.server.oci.config.from_file")
+    @patch("oracle.oci_database_mcp_server.server.os.getenv")
+    def test_get_database_client_supports_api_key_config(
+        self,
+        mock_getenv,
+        mock_from_file,
+        mock_open_file,
+        mock_load_private_key,
+        mock_security_token_signer,
+        mock_client,
+    ):
+        mock_getenv.side_effect = lambda k, default=None: {
+            "OCI_CONFIG_FILE": "/custom/config",
+        }.get(k, default)
+        config = {
+            "key_file": "/key.pem",
+            "fingerprint": "fingerprint",
+            "tenancy": "ocid1.tenancy.oc1..sample",
+            "user": "ocid1.user.oc1..sample",
+            "region": "us-ashburn-1",
+        }
+        mock_from_file.return_value = config
+
+        result = server.get_database_client()
+
+        mock_from_file.assert_called_once_with(
+            file_location="/custom/config",
+            profile_name=oci.config.DEFAULT_PROFILE,
+        )
+        mock_open_file.assert_not_called()
+        mock_load_private_key.assert_not_called()
+        mock_security_token_signer.assert_not_called()
+        args, kwargs = mock_client.call_args
+        assert args[0]["additional_user_agent"] == "oci-database-mcp/1.0.7"
+        assert "signer" not in kwargs
+        assert result is mock_client.return_value
+
 
 def test_oci_base_model_from_oci(monkeypatch):
     class MinimalModel(models.OCIBaseModel):
@@ -3349,9 +3390,9 @@ async def test_get_vm_cluster_update_history_entry(mock_get_client):
 
 @pytest.mark.asyncio
 @patch("oracle.oci_database_mcp_server.server.get_database_client")
-@patch("oci.core.VirtualNetworkClient")
-@patch("oci.config.from_file")
-@patch("oci.signer.load_private_key_from_file")
+@patch("oracle.oci_database_mcp_server.server.oci.core.VirtualNetworkClient")
+@patch("oracle.oci_database_mcp_server.server.oci.config.from_file")
+@patch("oracle.oci_database_mcp_server.server.oci.signer.load_private_key_from_file")
 @patch("builtins.open", new_callable=mock_open, read_data="dummy_token")
 async def test_get_public_ip_for_database(
     mock_file, mock_load_key, mock_config, mock_vcn_client_cls, mock_get_db_client
@@ -3402,3 +3443,70 @@ async def test_get_public_ip_for_database(
 
         result_text = response.content[0].text
         assert result_text == "203.0.113.10"
+
+
+@pytest.mark.asyncio
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.oci.core.VirtualNetworkClient")
+@patch("oracle.oci_database_mcp_server.server.oci.config.from_file")
+@patch("oracle.oci_database_mcp_server.server.oci.signer.load_private_key_from_file")
+@patch("oracle.oci_database_mcp_server.server.oci.auth.signers.SecurityTokenSigner")
+@patch("oracle.oci_database_mcp_server.server.open", new_callable=mock_open)
+@patch("oracle.oci_database_mcp_server.server.os.getenv")
+async def test_get_public_ip_for_database_supports_api_key_config(
+    mock_getenv,
+    mock_file,
+    mock_security_token_signer,
+    mock_load_key,
+    mock_config,
+    mock_vcn_client_cls,
+    mock_get_db_client,
+):
+    mock_getenv.side_effect = lambda k, default=None: {
+        "OCI_CONFIG_FILE": "/custom/config",
+    }.get(k, default)
+    mock_db_client = MagicMock()
+    mock_get_db_client.return_value = mock_db_client
+
+    mock_database = MagicMock()
+    mock_database.db_system_id = "ocid1.dbsystem.oc1..sample"
+    mock_database.vm_cluster_id = None
+    mock_database.compartment_id = "ocid1.compartment.oc1..sample"
+    mock_db_client.get_database.return_value = SimpleNamespace(data=mock_database)
+
+    mock_node = MagicMock()
+    mock_node.vnic_id = "ocid1.vnic.oc1..sample"
+    mock_db_client.list_db_nodes.return_value = SimpleNamespace(data=[mock_node])
+
+    mock_vcn_client = MagicMock()
+    mock_vcn_client_cls.return_value = mock_vcn_client
+    mock_vcn_client.get_vnic.return_value = SimpleNamespace(
+        data=SimpleNamespace(public_ip="203.0.113.10")
+    )
+
+    config = {
+        "key_file": "/key.pem",
+        "fingerprint": "fingerprint",
+        "tenancy": "ocid1.tenancy.oc1..sample",
+        "user": "ocid1.user.oc1..sample",
+        "region": "us-ashburn-1",
+    }
+    mock_config.return_value = config
+
+    async with Client(mcp) as client:
+        response = await client.call_tool(
+            "get_public_ip_for_database",
+            {"database_id": "ocid1.database.oc1..sampleId"},
+        )
+
+    mock_config.assert_called_once_with(
+        file_location="/custom/config",
+        profile_name=oci.config.DEFAULT_PROFILE,
+    )
+    mock_file.assert_not_called()
+    mock_load_key.assert_not_called()
+    mock_security_token_signer.assert_not_called()
+    args, kwargs = mock_vcn_client_cls.call_args
+    assert args[0]["additional_user_agent"] == "oci-database-mcp/1.0.7"
+    assert "signer" not in kwargs
+    assert response.content[0].text == "203.0.113.10"

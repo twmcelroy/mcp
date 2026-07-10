@@ -379,8 +379,11 @@ def get_public_ip_for_database(
 
         # Initialize Virtual Network Client
         config = oci.config.from_file(
-            profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
+            file_location=os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION),
+            profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE),
         )
+        user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
+        config["additional_user_agent"] = f"{user_agent_name}/{__version__}"
         vn_signer = None
         if "security_token_file" in config:
             private_key = oci.signer.load_private_key_from_file(config["key_file"])
